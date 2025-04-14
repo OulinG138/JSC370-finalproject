@@ -1,0 +1,1552 @@
+---
+title: "Methods"
+output: html_document
+---
+
+```{r setup}
+library(reticulate)
+
+use_python("/Users/anthonywang/.local/share/virtualenvs/Midterm-kyPPibev/bin/python", required = TRUE)
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import requests
+import json
+from time import sleep
+from tabulate import tabulate
+from scipy import stats
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+import warnings
+import re
+```
+
+```{python}
+warnings.filterwarnings("ignore")
+
+# Set plotting style
+sns.set_context("paper", font_scale=1.5)
+plt.rcParams["figure.figsize"] = (12, 8)
+plt.rcParams["savefig.dpi"] = 300
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# 1. Import and Initial Data Examination
+# ------------------------------------------------------------------------------
+
+
+def load_raw_data(filepath):
+    """
+    Load the raw gaming survey data with appropriate encoding
+
+    Parameters:
+    filepath (str): Path to the raw CSV file
+
+    Returns:
+    pd.DataFrame: Raw dataframe
+    """
+    print(f"Loading raw data from {filepath}...")
+
+    # Try multiple encodings to handle special characters
+    encodings_to_try = ["utf-8", "latin1", "cp1252"]
+
+    for encoding in encodings_to_try:
+        try:
+            raw_df = pd.read_csv(filepath, encoding=encoding)
+            print(f"Successfully loaded data with {encoding} encoding")
+            break
+        except UnicodeDecodeError:
+            print(f"Failed with {encoding} encoding")
+    else:
+        print("Trying with error handling...")
+        raw_df = pd.read_csv(filepath, encoding="utf-8", errors="replace")
+
+    # Remove unnamed index column if present
+    if raw_df.columns[0] == "" or raw_df.columns[0].startswith("Unnamed"):
+        raw_df = raw_df.drop(columns=[raw_df.columns[0]])
+
+    # Initial data examination
+    print(
+        f"\nRaw dataset dimensions: {raw_df.shape[0]} rows, {raw_df.shape[1]} columns"
+    )
+
+    # Check for missing values in key columns
+    key_columns = ["Game", "Hours", "GAD_T", "SWL_T", "SPIN_T", "Gender", "Age"]
+    key_cols_present = [col for col in key_columns if col in raw_df.columns]
+
+    if key_cols_present:
+        missing_vals = raw_df[key_cols_present].isnull().sum()
+        print("\nMissing values in key columns:")
+        print(missing_vals)
+
+    # Identify mental health scale items
+    gad_cols = [
+        col for col in raw_df.columns if col.startswith("GAD") and col != "GAD_T"
+    ]
+    swl_cols = [
+        col for col in raw_df.columns if col.startswith("SWL") and col != "SWL_T"
+    ]
+    spin_cols = [
+        col for col in raw_df.columns if col.startswith("SPIN") and col != "SPIN_T"
+    ]
+
+    print(f"\nIdentified mental health items:")
+    print(f"- GAD (anxiety) items: {len(gad_cols)}")
+    print(f"- SWL (life satisfaction) items: {len(swl_cols)}")
+    print(f"- SPIN (social phobia) items: {len(spin_cols)}")
+
+    # Check if calculated scores are already present
+    calculated_scores = []
+    if "GAD_T" in raw_df.columns:
+        calculated_scores.append("GAD_T")
+    if "SWL_T" in raw_df.columns:
+        calculated_scores.append("SWL_T")
+    if "SPIN_T" in raw_df.columns:
+        calculated_scores.append("SPIN_T")
+
+    if calculated_scores:
+        print(
+            f"\nCalculated scores already present in data: {', '.join(calculated_scores)}"
+        )
+
+    return raw_df, gad_cols, swl_cols, spin_cols
+
+
+# ------------------------------------------------------------------------------
+# 2. Clean and Fix Data Issues
+# ------------------------------------------------------------------------------
+
+
+def clean_data_issues(df):
+    """
+    Fix encoding issues and other data problems
+
+    Parameters:
+    df (pd.DataFrame): Raw dataframe
+
+    Returns:
+    pd.DataFrame: Cleaned dataframe
+    """
+    print("\nCleaning data issues...")
+    df_clean = df.copy()
+
+    # Fix encoding issues in text columns
+    text_columns = df_clean.select_dtypes(include=["object"]).columns
+
+    for col in text_columns:
+        # Replace problematic characters
+        df_clean[col] = df_clean[col].astype(str).str.replace("�", "'", regex=False)
+        df_clean[col] = df_clean[col].astype(str).str.replace("\xa0", " ", regex=False)
+
+    # Convert 'Hours' to numeric if it's not already
+    if "Hours" in df_clean.columns:
+        try:
+            df_clean["Hours"] = pd.to_numeric(df_clean["Hours"], errors="coerce")
+            print(
+                f"- Converted 'Hours' to numeric, range: {df_clean['Hours'].min()} to {df_clean['Hours'].max()}"
+            )
+        except:
+            print("- Could not convert 'Hours' to numeric")
+
+    # Convert 'Age' to numeric if it's not already
+    if "Age" in df_clean.columns:
+        try:
+            df_clean["Age"] = pd.to_numeric(df_clean["Age"], errors="coerce")
+            print(
+                f"- Converted 'Age' to numeric, range: {df_clean['Age'].min()} to {df_clean['Age'].max()}"
+            )
+        except:
+            print("- Could not convert 'Age' to numeric")
+
+    # Handle 'N/A' and similar values
+    for col in df_clean.columns:
+        if df_clean[col].dtype == "object":
+            na_values = ["N/A", "n/a", "NA", "na", "-", "None", "none"]
+            df_clean[col] = df_clean[col].replace(na_values, np.nan)
+
+    print("Data cleaning completed.")
+    return df_clean
+
+
+# ------------------------------------------------------------------------------
+# 3. Verify and Calculate Mental Health Scores
+# ------------------------------------------------------------------------------
+
+
+def verify_calculate_scores(df, gad_cols, swl_cols, spin_cols):
+    """
+    Verify existing scores or calculate if needed
+
+    Parameters:
+    df (pd.DataFrame): Cleaned dataframe
+    gad_cols (list): List of GAD item columns
+    swl_cols (list): List of SWL item columns
+    spin_cols (list): List of SPIN item columns
+
+    Returns:
+    pd.DataFrame: Dataframe with verified scores
+    """
+    print("\nVerifying and calculating mental health scores...")
+    df_scored = df.copy()
+
+    # Convert mental health items to numeric if they aren't already
+    all_scale_items = gad_cols + swl_cols + spin_cols
+    for col in all_scale_items:
+        if col in df_scored.columns:
+            df_scored[col] = pd.to_numeric(df_scored[col], errors="coerce")
+
+    # Calculate and verify GAD scores
+    if len(gad_cols) > 0:
+        df_scored["GAD_T_calculated"] = df_scored[gad_cols].sum(axis=1)
+
+        if "GAD_T" in df_scored.columns:
+            # Convert existing score to numeric if needed
+            df_scored["GAD_T"] = pd.to_numeric(df_scored["GAD_T"], errors="coerce")
+
+            # Calculate match percentage
+            mask = (~df_scored["GAD_T"].isna()) & (
+                ~df_scored["GAD_T_calculated"].isna()
+            )
+            match_pct = (
+                df_scored.loc[mask, "GAD_T"] == df_scored.loc[mask, "GAD_T_calculated"]
+            ).mean()
+            print(f"- GAD scores match in {match_pct:.1%} of cases")
+
+            # Use calculated score if significant discrepancy
+            if match_pct < 0.95:
+                print("  Using calculated GAD scores due to discrepancies")
+                df_scored["GAD_T"] = df_scored["GAD_T_calculated"]
+        else:
+            # If no existing score, use calculated
+            df_scored["GAD_T"] = df_scored["GAD_T_calculated"]
+            print("- Added calculated GAD scores")
+
+    # Calculate and verify SWL scores
+    if len(swl_cols) > 0:
+        df_scored["SWL_T_calculated"] = df_scored[swl_cols].sum(axis=1)
+
+        if "SWL_T" in df_scored.columns:
+            # Convert existing score to numeric if needed
+            df_scored["SWL_T"] = pd.to_numeric(df_scored["SWL_T"], errors="coerce")
+
+            # Calculate match percentage
+            mask = (~df_scored["SWL_T"].isna()) & (
+                ~df_scored["SWL_T_calculated"].isna()
+            )
+            match_pct = (
+                df_scored.loc[mask, "SWL_T"] == df_scored.loc[mask, "SWL_T_calculated"]
+            ).mean()
+            print(f"- SWL scores match in {match_pct:.1%} of cases")
+
+            # Use calculated score if significant discrepancy
+            if match_pct < 0.95:
+                print("  Using calculated SWL scores due to discrepancies")
+                df_scored["SWL_T"] = df_scored["SWL_T_calculated"]
+        else:
+            # If no existing score, use calculated
+            df_scored["SWL_T"] = df_scored["SWL_T_calculated"]
+            print("- Added calculated SWL scores")
+
+    # Calculate and verify SPIN scores
+    if len(spin_cols) > 0:
+        df_scored["SPIN_T_calculated"] = df_scored[spin_cols].sum(axis=1)
+
+        if "SPIN_T" in df_scored.columns:
+            # Convert existing score to numeric if needed
+            df_scored["SPIN_T"] = pd.to_numeric(df_scored["SPIN_T"], errors="coerce")
+
+            # Calculate match percentage
+            mask = (~df_scored["SPIN_T"].isna()) & (
+                ~df_scored["SPIN_T_calculated"].isna()
+            )
+            match_pct = (
+                df_scored.loc[mask, "SPIN_T"]
+                == df_scored.loc[mask, "SPIN_T_calculated"]
+            ).mean()
+            print(f"- SPIN scores match in {match_pct:.1%} of cases")
+
+            # Use calculated score if significant discrepancy
+            if match_pct < 0.95:
+                print("  Using calculated SPIN scores due to discrepancies")
+                df_scored["SPIN_T"] = df_scored["SPIN_T_calculated"]
+        else:
+            # If no existing score, use calculated
+            df_scored["SPIN_T"] = df_scored["SPIN_T_calculated"]
+            print("- Added calculated SPIN scores")
+
+    # Drop calculation columns
+    calc_cols = [col for col in df_scored.columns if col.endswith("_calculated")]
+    df_scored = df_scored.drop(columns=calc_cols)
+
+    # Summary of scores
+    score_cols = ["GAD_T", "SWL_T", "SPIN_T"]
+    for col in score_cols:
+        if col in df_scored.columns:
+            print(
+                f"- {col}: Mean = {df_scored[col].mean():.2f}, Std = {df_scored[col].std():.2f}, Range = {df_scored[col].min():.0f}-{df_scored[col].max():.0f}"
+            )
+
+    print("Score verification completed.")
+    return df_scored
+
+
+# ------------------------------------------------------------------------------
+# 4. Standardize Game and Playstyle Information
+# ------------------------------------------------------------------------------
+
+
+def standardize_gaming_info(df):
+    """
+    Standardize game names and playstyle information
+
+    Parameters:
+    df (pd.DataFrame): Dataframe with verified scores
+
+    Returns:
+    pd.DataFrame: Dataframe with standardized game information
+    """
+    print("\nStandardizing game and playstyle information...")
+    df_std = df.copy()
+
+    # Create standardized game names
+    if "Game" in df_std.columns:
+        # Count occurrences before standardization
+        before_counts = df_std["Game"].value_counts()
+        print(f"- Before standardization: {before_counts.shape[0]} unique game entries")
+        print(f"- Top 5 games: {', '.join(before_counts.head(5).index.tolist())}")
+
+        # Create a mapping for variant game names to standardized names
+        game_name_mapping = {
+            "Starcraft 2": "StarCraft II",
+            "SC2": "StarCraft II",
+            "Starcraft II": "StarCraft II",
+            "Counter Strike": "Counter-Strike: Global Offensive",
+            "CS:GO": "Counter-Strike: Global Offensive",
+            "CS GO": "Counter-Strike: Global Offensive",
+            "CSGO": "Counter-Strike: Global Offensive",
+            "Counter-Strike": "Counter-Strike: Global Offensive",
+            "Skyrim": "The Elder Scrolls V: Skyrim",
+            "TES5": "The Elder Scrolls V: Skyrim",
+            "The Elder Scrolls 5": "The Elder Scrolls V: Skyrim",
+            "WoW": "World of Warcraft",
+            "World Of Warcraft": "World of Warcraft",
+            "Diablo 3": "Diablo III",
+            "D3": "Diablo III",
+            "Hearthstone: Heroes of Warcraft": "Hearthstone",
+            "LoL": "League of Legends",
+            "League of legends": "League of Legends",
+            "HOTS": "Heroes of the Storm",
+            "Heroes Of The Storm": "Heroes of the Storm",
+            "GW2": "Guild Wars 2",
+            "Guild wars 2": "Guild Wars 2",
+        }
+
+        # Apply the mapping to standardize game names
+        df_std["Game_Standardized"] = df_std["Game"].str.strip()
+        df_std["Game_Standardized"] = df_std["Game_Standardized"].replace(
+            game_name_mapping
+        )
+
+        # Count occurrences after standardization
+        after_counts = df_std["Game_Standardized"].value_counts()
+        print(f"- After standardization: {after_counts.shape[0]} unique game entries")
+        print(
+            f"- Top 5 standardized games: {', '.join(after_counts.head(5).index.tolist())}"
+        )
+
+    # Standardize Playstyle
+    if "Playstyle" in df_std.columns:
+        # Count occurrences before standardization
+        before_counts = df_std["Playstyle"].value_counts()
+        print(
+            f"\n- Before standardization: {before_counts.shape[0]} unique playstyle entries"
+        )
+
+        # Create a mapping for playstyle categories
+        playstyle_mapping = {
+            "Singleplayer": "Single Player",
+            "Single player": "Single Player",
+            "Single-player": "Single Player",
+            "SP": "Single Player",
+            "single player": "Single Player",
+            "Multiplayer - online - with strangers": "Multiplayer with Strangers",
+            "Multiplayer - with strangers": "Multiplayer with Strangers",
+            "MP-strangers": "Multiplayer with Strangers",
+            "Multiplayer - online - with real life friends": "Multiplayer with Friends",
+            "Multiplayer - friends": "Multiplayer with Friends",
+            "MP-friends": "Multiplayer with Friends",
+            "Multiplayer - online - with online acquaintances or teammates": "Multiplayer with Teammates",
+            "Multiplayer - teams": "Multiplayer with Teammates",
+            "MP-teams": "Multiplayer with Teammates",
+        }
+
+        # Apply the mapping
+        df_std["Playstyle_Standardized"] = df_std["Playstyle"].str.strip()
+        df_std["Playstyle_Standardized"] = df_std["Playstyle_Standardized"].replace(
+            playstyle_mapping
+        )
+
+        # For values not in the mapping, keep the original but strip whitespace
+        mask = ~df_std["Playstyle_Standardized"].isin(playstyle_mapping.values())
+        if mask.any():
+            print(
+                f"  Note: {mask.sum()} playstyle entries not in mapping will keep original values"
+            )
+
+        # Count occurrences after standardization
+        after_counts = df_std["Playstyle_Standardized"].value_counts()
+        print(
+            f"- After standardization: {after_counts.shape[0]} unique playstyle entries"
+        )
+
+    # Create multiplayer flag
+    if "Playstyle" in df_std.columns or "Playstyle_Standardized" in df_std.columns:
+        playstyle_col = (
+            "Playstyle_Standardized"
+            if "Playstyle_Standardized" in df_std.columns
+            else "Playstyle"
+        )
+        df_std["is_multiplayer"] = (
+            df_std[playstyle_col].str.contains("Multiplayer", na=False).astype(int)
+        )
+        print(
+            f"\n- Created multiplayer flag: {df_std['is_multiplayer'].sum()} multiplayer entries ({df_std['is_multiplayer'].mean():.1%})"
+        )
+
+    print("Game and playstyle standardization completed.")
+    return df_std
+
+
+# ------------------------------------------------------------------------------
+# 5. Filter and Validate Data
+# ------------------------------------------------------------------------------
+
+
+def filter_validate_data(df):
+    """
+    Filter out invalid entries and validate data quality
+
+    Parameters:
+    df (pd.DataFrame): Dataframe with standardized information
+
+    Returns:
+    pd.DataFrame: Validated and filtered dataframe
+    """
+    print("\nValidating and filtering data...")
+    df_valid = df.copy()
+
+    # Track rows before filtering
+    initial_rows = len(df_valid)
+    print(f"Starting with {initial_rows} records")
+
+    # Filter out entries with missing game information if required for analysis
+    if "Game" in df_valid.columns:
+        missing_game = df_valid["Game"].isna()
+        df_valid = df_valid[~missing_game]
+        print(f"- Removed {missing_game.sum()} rows with missing game information")
+
+    # Filter out entries with implausible gaming hours
+    if "Hours" in df_valid.columns:
+        # Define reasonable thresholds (e.g., max 100 hours/week is ~14 hours/day)
+        implausible_hours = (df_valid["Hours"] < 0) | (df_valid["Hours"] > 100)
+        df_valid = df_valid[~implausible_hours]
+        print(f"- Removed {implausible_hours.sum()} rows with implausible gaming hours")
+
+    # Filter out entries with implausible age values
+    if "Age" in df_valid.columns:
+        implausible_age = (df_valid["Age"] < 10) | (df_valid["Age"] > 100)
+        df_valid = df_valid[~implausible_age]
+        print(f"- Removed {implausible_age.sum()} rows with implausible age values")
+
+    # Filter out entries with missing mental health scores if they're crucial
+    for score in ["GAD_T", "SWL_T", "SPIN_T"]:
+        if score in df_valid.columns:
+            missing_score = df_valid[score].isna()
+            if missing_score.sum() > 0:
+                df_valid = df_valid[~missing_score]
+                print(
+                    f"- Removed {missing_score.sum()} rows with missing {score} scores"
+                )
+
+    # Report on filtering results
+    final_rows = len(df_valid)
+    removed = initial_rows - final_rows
+    print(
+        f"\nValidation complete: Kept {final_rows} records ({removed} removed, {removed/initial_rows:.1%} of total)"
+    )
+
+    return df_valid
+
+
+# ------------------------------------------------------------------------------
+# 6. Create Derived Variables
+# ------------------------------------------------------------------------------
+
+
+def create_derived_variables(df):
+    """
+    Create useful derived variables for analysis
+
+    Parameters:
+    df (pd.DataFrame): Validated dataframe
+
+    Returns:
+    pd.DataFrame: Dataframe with additional variables
+    """
+    print("\nCreating derived variables...")
+    df_derived = df.copy()
+
+    # Create gaming intensity categories based on hours
+    if "Hours" in df_derived.columns:
+        df_derived["gaming_intensity"] = pd.cut(
+            df_derived["Hours"],
+            bins=[-1, 5, 15, 30, float("inf")],
+            labels=["Casual", "Regular", "Dedicated", "Hardcore"],
+        )
+        intensity_counts = df_derived["gaming_intensity"].value_counts()
+        print(
+            f"- Created gaming intensity categories: {', '.join([f'{k}: {v}' for k, v in intensity_counts.items()])}"
+        )
+
+    # Create age groups if age is available
+    if "Age" in df_derived.columns:
+        df_derived["age_group"] = pd.cut(
+            df_derived["Age"],
+            bins=[0, 18, 25, 35, 45, float("inf")],
+            labels=["<18", "18-25", "26-35", "36-45", "45+"],
+        )
+        age_counts = df_derived["age_group"].value_counts()
+        print(
+            f"- Created age groups: {', '.join([f'{k}: {v}' for k, v in age_counts.items()])}"
+        )
+
+    # Create mental health level categories
+    for col, name, bins in [
+        ("GAD_T", "anxiety_level", [-1, 4, 9, 14, float("inf")]),
+        ("SWL_T", "satisfaction_level", [-1, 10, 15, 25, float("inf")]),
+        ("SPIN_T", "social_anxiety_level", [-1, 20, 30, 40, float("inf")]),
+    ]:
+        if col in df_derived.columns:
+            labels = ["Low", "Moderate", "High", "Very High"]
+            df_derived[name] = pd.cut(df_derived[col], bins=bins, labels=labels)
+            level_counts = df_derived[name].value_counts()
+            print(
+                f"- Created {name}: {', '.join([f'{k}: {v}' for k, v in level_counts.items()])}"
+            )
+
+    print("Derived variables created.")
+    return df_derived
+
+
+# ------------------------------------------------------------------------------
+# 7. Export Processed Data
+# ------------------------------------------------------------------------------
+
+
+def export_processed_data(df, output_path):
+    """
+    Export the processed dataset to CSV
+
+    Parameters:
+    df (pd.DataFrame): Fully processed dataframe
+    output_path (str): Path to save the processed CSV file
+
+    Returns:
+    pd.DataFrame: Final processed dataframe that was exported
+    """
+    print(f"\nExporting processed data to {output_path}...")
+
+    # Export the processed data
+    df.to_csv(output_path, index=False)
+    print(f"Export complete: {df.shape[0]} rows, {df.shape[1]} columns")
+
+    # Generate a brief report on the processed data
+    print("\nProcessed dataset overview:")
+    print(f"- Participants: {df.shape[0]}")
+
+    # Gender distribution if available
+    if "Gender" in df.columns:
+        gender_counts = df["Gender"].value_counts()
+        print(f"- Gender distribution: {dict(gender_counts)}")
+
+    # Age information if available
+    if "Age" in df.columns:
+        print(
+            f"- Age range: {df['Age'].min()} to {df['Age'].max()} years (mean: {df['Age'].mean():.1f})"
+        )
+
+    # Game information
+    if "Game_Standardized" in df.columns:
+        print(f"- Unique games: {df['Game_Standardized'].nunique()}")
+        top_games = df["Game_Standardized"].value_counts().head(5)
+        print(
+            f"- Top 5 games: {', '.join([f'{game} ({count})' for game, count in top_games.items()])}"
+        )
+
+    # Gaming hours if available
+    if "Hours" in df.columns:
+        print(
+            f"- Weekly gaming hours (mean): {df['Hours'].mean():.1f}, (median): {df['Hours'].median():.1f}"
+        )
+
+    # Brief statistical summary of mental health metrics
+    for metric in ["GAD_T", "SWL_T", "SPIN_T"]:
+        if metric in df.columns:
+            print(
+                f"- {metric} mean: {df[metric].mean():.2f}, std: {df[metric].std():.2f}"
+            )
+
+    return df
+
+
+# ------------------------------------------------------------------------------
+# 8. Complete Preprocessing Pipeline
+# ------------------------------------------------------------------------------
+
+
+def run_preprocessing_pipeline(input_path, output_path):
+    """
+    Run the complete preprocessing pipeline
+
+    Parameters:
+    input_path (str): Path to the raw CSV file
+    output_path (str): Path to save the processed CSV file
+
+    Returns:
+    pd.DataFrame: The processed dataframe
+    """
+    print("=" * 80)
+    print("STARTING PREPROCESSING PIPELINE")
+    print("=" * 80)
+
+    # Step 1: Load raw data and examine
+    raw_df, gad_cols, swl_cols, spin_cols = load_raw_data(input_path)
+
+    # Step 2: Clean data issues (encoding, etc.)
+    cleaned_df = clean_data_issues(raw_df)
+
+    # Step 3: Verify and calculate mental health scores
+    scored_df = verify_calculate_scores(cleaned_df, gad_cols, swl_cols, spin_cols)
+
+    # Step 4: Standardize game names and playstyle
+    standardized_df = standardize_gaming_info(scored_df)
+
+    # Step 5: Filter invalid entries
+    validated_df = filter_validate_data(standardized_df)
+
+    # Step 6: Create derived variables
+    final_df = create_derived_variables(validated_df)
+
+    # Step 7: Export processed data
+    processed_df = export_processed_data(final_df, output_path)
+
+    print("\n" + "=" * 80)
+    print("PREPROCESSING PIPELINE COMPLETE")
+    print("=" * 80)
+
+    return processed_df
+```
+
+```{python}
+processed_data = run_preprocessing_pipeline(
+    "data/raw/Gaming Study Data.csv", "data/processed/processed_data.csv"
+)
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# API INTEGRATION AND DATA ENRICHMENT
+# ------------------------------------------------------------------------------
+
+df = pd.read_csv("data/processed/processed_data.csv")
+```
+
+```{python}
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+API_KEY = os.getenv("API_KEY")
+```
+
+```{python}
+def get_game_info(game_name):
+    """
+    Fetches game information from the RAWG API
+
+    Parameters:
+    game_name (str): Name of the game to search for
+
+    Returns:
+    dict: Dictionary containing game metadata if found, None otherwise
+    """
+    if game_name == "Other" or pd.isna(game_name):
+        return None
+
+    base_url = "https://api.rawg.io/api/games"
+    params = {"key": API_KEY, "search": game_name, "page_size": 1}
+
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        if data["count"] > 0:
+            game = data["results"][0]
+
+            # Extract the needed information
+            game_info = {
+                "rawg_id": game.get("id"),
+                "rawg_name": game.get("name"),
+                "released": game.get("released"),
+                "rating": game.get("rating"),
+                "genres": [g["name"] for g in game.get("genres", [])],
+                "platforms": [p["platform"]["name"] for p in game.get("platforms", [])],
+                "primary_genre": (
+                    game.get("genres", [{}])[0].get("name")
+                    if game.get("genres")
+                    else None
+                ),
+            }
+            return game_info
+        else:
+            print(f"No results found for game: {game_name}")
+            return None
+    except Exception as e:
+        print(f"Error fetching data for {game_name}: {e}")
+        return None
+
+
+# Get unique games (excluding "Other")
+unique_games = df["Game"].dropna().unique()
+valid_games = [game for game in unique_games if game != "Other"]
+print(f"Number of unique named games (excluding 'Other'): {len(valid_games)}")
+
+# Create a dataframe to store game information
+games_df = pd.DataFrame(
+    columns=[
+        "game_name",
+        "rawg_id",
+        "rawg_name",
+        "released",
+        "rating",
+        "genres",
+        "platforms",
+        "primary_genre",
+    ]
+)
+
+# Fetch information for each valid game
+for game in valid_games:
+    print(f"Fetching info for: {game}")
+    info = get_game_info(game)
+
+    if info:
+        # Add the game name and info to the dataframe
+        game_row = {"game_name": game}
+        game_row.update(info)
+        games_df = pd.concat([games_df, pd.DataFrame([game_row])], ignore_index=True)
+        print(
+            f"  - Found: {info['rawg_name']} ({info.get('primary_genre', 'Unknown genre')})"
+        )
+    else:
+        print(f"  - No info found for {game}")
+
+    sleep(0.5)  # To avoid hitting API rate limits
+
+print(f"Successfully fetched information for {len(games_df)} games")
+
+# Convert list columns to strings for easier merging
+games_df["genres_str"] = games_df["genres"].apply(
+    lambda x: ", ".join(x) if isinstance(x, list) else ""
+)
+games_df["platforms_str"] = games_df["platforms"].apply(
+    lambda x: ", ".join(x) if isinstance(x, list) else ""
+)
+
+# Drop the original list columns
+games_df = games_df.drop(columns=["genres", "platforms"])
+
+# Create a mapping dictionary for game info
+game_info_mapping = games_df.set_index("game_name").to_dict("index")
+
+# Merge the game information with the original dataframe
+df_merged = df.copy()
+
+# Add columns for game metadata
+df_merged["rawg_id"] = np.nan
+df_merged["rawg_name"] = np.nan
+df_merged["game_released"] = np.nan
+df_merged["game_rating"] = np.nan
+df_merged["game_genres"] = np.nan
+df_merged["game_platforms"] = np.nan
+df_merged["primary_genre"] = np.nan
+
+# Fill in the metadata for each game
+for game, info in game_info_mapping.items():
+    mask = df_merged["Game"] == game
+
+    for key, value in info.items():
+        if key in [
+            "rawg_id",
+            "rawg_name",
+            "released",
+            "rating",
+            "genres_str",
+            "platforms_str",
+            "primary_genre",
+        ]:
+            # Map column names
+            if key == "released":
+                df_merged.loc[mask, "game_released"] = value
+            elif key == "genres_str":
+                df_merged.loc[mask, "game_genres"] = value
+            elif key == "platforms_str":
+                df_merged.loc[mask, "game_platforms"] = value
+            else:
+                df_merged.loc[mask, key] = value
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# FEATURE ENGINEERING
+# ------------------------------------------------------------------------------
+
+
+# Calculate game age
+def extract_year(date_str):
+    """Extract year from date string or return NaN"""
+    if pd.isna(date_str):
+        return np.nan
+    try:
+        return int(date_str.split("-")[0])
+    except:
+        return np.nan
+
+
+df_merged["game_release_year"] = df_merged["game_released"].apply(extract_year)
+df_merged["game_age_years"] = (
+    2025 - df_merged["game_release_year"]
+)  # Using current year
+
+# Create binary flags for game genres
+df_merged["is_action_game"] = (
+    df_merged["game_genres"].str.contains("Action", case=False, na=False).astype(int)
+)
+df_merged["is_rpg_game"] = (
+    df_merged["game_genres"].str.contains("RPG", case=False, na=False).astype(int)
+)
+df_merged["is_strategy_game"] = (
+    df_merged["game_genres"].str.contains("Strategy", case=False, na=False).astype(int)
+)
+df_merged["is_shooter_game"] = (
+    df_merged["game_genres"].str.contains("Shooter", case=False, na=False).astype(int)
+)
+df_merged["is_mmo_game"] = (
+    df_merged["game_genres"]
+    .str.contains("Massively Multiplayer", case=False, na=False)
+    .astype(int)
+)
+
+# Create multiplayer flag based on playstyle
+df_merged["is_multiplayer"] = (
+    df_merged["Playstyle"].str.contains("Multiplayer", na=False).astype(int)
+)
+
+# Create gaming intensity categories
+df_merged["gaming_intensity"] = pd.cut(
+    df_merged["Hours"],
+    bins=[-1, 5, 15, 30, float("inf")],
+    labels=["Casual", "Regular", "Dedicated", "Hardcore"],
+)
+
+# Save the merged dataset
+df_merged.to_csv("data/processed/gaming_mental_health_enriched.csv", index=False)
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# EXPLORATORY DATA ANALYSIS
+# ------------------------------------------------------------------------------
+
+# Dataset overview
+print("\nEnriched dataset overview:")
+dataset_overview = {
+    "Total number of participants": len(df_merged),
+    "Participants with identified games": df_merged["rawg_id"].notna().sum(),
+    "Percentage with game data": f"{df_merged['rawg_id'].notna().mean() * 100:.1f}%",
+    "Number of unique games identified": len(games_df),
+    "Average weekly gaming hours": f"{df_merged['Hours'].mean():.1f} hours",
+}
+
+# Create a formatted table using tabulate
+overview_table = tabulate(
+    [[k, v] for k, v in dataset_overview.items()],
+    headers=["Metric", "Value"],
+    tablefmt="grid",
+)
+print(overview_table)
+
+# Summary statistics for mental health metrics
+mental_health_summary = df_merged[["GAD_T", "SWL_T", "SPIN_T"]].describe().round(2)
+print("\nSummary statistics for mental health metrics:")
+print(tabulate(mental_health_summary, headers="keys", tablefmt="grid"))
+
+# Game genre distribution
+genre_counts = df_merged["primary_genre"].value_counts()
+print("\nDistribution of primary game genres:")
+print(
+    tabulate(
+        [[genre, count] for genre, count in genre_counts.items()],
+        headers=["Genre", "Count"],
+        tablefmt="grid",
+    )
+)
+
+# ------------------------------------------------------------------------------
+# GENRE ANALYSIS
+# ------------------------------------------------------------------------------
+
+# Calculate mental health metrics by primary genre
+genre_mental_health = df_merged.groupby("primary_genre")[
+    ["GAD_T", "SWL_T", "SPIN_T"]
+].agg(["mean", "std", "count"])
+
+print("\nMental health metrics by primary game genre:")
+print(tabulate(genre_mental_health, headers="keys", tablefmt="grid"))
+
+# Perform ANOVA to test for differences between genres
+print("\nANOVA results for mental health differences between game genres:")
+anova_results = {}
+
+for metric in ["GAD_T", "SWL_T", "SPIN_T"]:
+    # Create a subset with non-missing values
+    subset = df_merged[["primary_genre", metric]].dropna()
+
+    if len(subset) > 10:  # Only run if we have enough data
+        # Create model and run ANOVA
+        try:
+            model = ols(f"{metric} ~ C(primary_genre)", data=subset).fit()
+            anova_table = sm.stats.anova_lm(model, typ=2)
+
+            # Store p-value
+            anova_results[metric] = {
+                "F-value": anova_table["F"][0],
+                "p-value": anova_table["PR(>F)"][0],
+                "Significant": "Yes" if anova_table["PR(>F)"][0] < 0.05 else "No",
+            }
+        except Exception as e:
+            print(f"Could not run ANOVA for {metric}: {e}")
+
+if anova_results:
+    anova_df = pd.DataFrame(anova_results).T
+    print(tabulate(anova_df, headers="keys", tablefmt="grid"))
+
+# ------------------------------------------------------------------------------
+# GAMING INTENSITY ANALYSIS
+# ------------------------------------------------------------------------------
+
+# Test for correlation between hours played and mental health metrics
+print("\nCorrelations between gaming hours and mental health:")
+correlation_results = []
+
+for metric in ["GAD_T", "SWL_T", "SPIN_T"]:
+    mask = ~(df_merged[metric].isna() | df_merged["Hours"].isna())
+    if mask.sum() > 10:  # Only calculate if we have enough data
+        corr, p_value = stats.pearsonr(
+            df_merged.loc[mask, metric], df_merged.loc[mask, "Hours"]
+        )
+        correlation_results.append(
+            {
+                "Metric": metric,
+                "Correlation": round(corr, 3),
+                "p-value": p_value,
+                "Significant": "Yes" if p_value < 0.05 else "No",
+                "Sample Size": mask.sum(),
+            }
+        )
+
+corr_df = pd.DataFrame(correlation_results)
+print(tabulate(corr_df, headers="keys", tablefmt="grid"))
+
+# Compare mental health metrics across gaming intensity categories
+intensity_stats = df_merged.groupby("gaming_intensity")[
+    ["GAD_T", "SWL_T", "SPIN_T"]
+].agg(["mean", "std", "count"])
+
+print("\nMental health metrics by gaming intensity:")
+print(tabulate(intensity_stats, headers="keys", tablefmt="grid"))
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# MULTIPLAYER VS. SINGLE PLAYER ANALYSIS
+# ------------------------------------------------------------------------------
+
+# Compare mental health metrics for multiplayer vs. single player gamers
+play_style_comparison = df_merged.groupby("is_multiplayer")[
+    ["GAD_T", "SWL_T", "SPIN_T"]
+].agg(["mean", "std", "count"])
+
+print("\nMental health metrics by play style (multiplayer vs. single player):")
+print(tabulate(play_style_comparison, headers="keys", tablefmt="grid"))
+
+# T-tests for multiplayer vs. single player
+print("\nT-test results for multiplayer vs. single player:")
+ttest_results = []
+
+for metric in ["GAD_T", "SWL_T", "SPIN_T"]:
+    # Create subsets
+    multi = df_merged[df_merged["is_multiplayer"] == 1][metric].dropna()
+    single = df_merged[df_merged["is_multiplayer"] == 0][metric].dropna()
+
+    if len(multi) > 10 and len(single) > 10:  # Only run if we have enough data
+        t_stat, p_val = stats.ttest_ind(multi, single, equal_var=False)
+
+        ttest_results.append(
+            {
+                "Metric": metric,
+                "Multiplayer Mean": round(multi.mean(), 2),
+                "Single Player Mean": round(single.mean(), 2),
+                "Difference": round(multi.mean() - single.mean(), 2),
+                "t-statistic": round(t_stat, 3),
+                "p-value": p_val,
+                "Significant": "Yes" if p_val < 0.05 else "No",
+            }
+        )
+
+ttest_df = pd.DataFrame(ttest_results)
+print(tabulate(ttest_df, headers="keys", tablefmt="grid"))
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# COMPREHENSIVE CORRELATION ANALYSIS
+# ------------------------------------------------------------------------------
+
+# Calculate all correlations between game features and mental health metrics
+mental_health_cols = ["GAD_T", "SWL_T", "SPIN_T"]
+game_feature_cols = [
+    "game_age_years",
+    "Hours",
+    "is_action_game",
+    "is_rpg_game",
+    "is_strategy_game",
+    "is_shooter_game",
+    "is_mmo_game",
+    "is_multiplayer",
+]
+
+# Calculate correlations
+correlations = pd.DataFrame()
+for mh_col in mental_health_cols:
+    for game_col in game_feature_cols:
+        mask = ~(df_merged[mh_col].isna() | df_merged[game_col].isna())
+        if mask.sum() > 10:  # Only calculate if we have enough data
+            corr, p_value = stats.pearsonr(
+                df_merged.loc[mask, mh_col], df_merged.loc[mask, game_col]
+            )
+            correlations = pd.concat(
+                [
+                    correlations,
+                    pd.DataFrame(
+                        {
+                            "Mental_Health_Metric": [mh_col],
+                            "Game_Feature": [game_col],
+                            "Correlation": [corr],
+                            "P_Value": [p_value],
+                            "Sample_Size": [mask.sum()],
+                            "Significant": ["Yes" if p_value < 0.05 else "No"],
+                        }
+                    ),
+                ],
+                ignore_index=True,
+            )
+
+print("\nComprehensive correlations between game features and mental health metrics:")
+print(tabulate(correlations.sort_values("P_Value"), headers="keys", tablefmt="grid"))
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# VISUALIZATIONS
+# ------------------------------------------------------------------------------
+
+# 1. Correlation heatmap
+plt.figure(figsize=(14, 10))
+correlation_pivot = correlations.pivot(
+    index="Game_Feature", columns="Mental_Health_Metric", values="Correlation"
+)
+sns.heatmap(
+    correlation_pivot, annot=True, cmap="coolwarm", vmin=-0.5, vmax=0.5, center=0
+)
+plt.title("Correlations Between Game Features and Mental Health Metrics", fontsize=16)
+plt.tight_layout()
+plt.savefig("game_mental_health_correlations.png", bbox_inches="tight")
+plt.close()
+
+# 2. Mental health by game genre (violin plots)
+plt.figure(figsize=(16, 12))
+
+plt.subplot(2, 2, 1)
+sns.violinplot(x="is_action_game", y="GAD_T", data=df_merged)
+plt.title("Anxiety Scores by Action Games", fontsize=14)
+plt.xlabel("Plays Action Games (0=No, 1=Yes)")
+plt.ylabel("GAD Score (Higher = More Anxiety)")
+
+plt.subplot(2, 2, 2)
+sns.violinplot(x="is_rpg_game", y="GAD_T", data=df_merged)
+plt.title("Anxiety Scores by RPG Games", fontsize=14)
+plt.xlabel("Plays RPG Games (0=No, 1=Yes)")
+plt.ylabel("GAD Score (Higher = More Anxiety)")
+
+plt.subplot(2, 2, 3)
+sns.violinplot(x="is_shooter_game", y="SPIN_T", data=df_merged)
+plt.title("Social Phobia Scores by Shooter Games", fontsize=14)
+plt.xlabel("Plays Shooter Games (0=No, 1=Yes)")
+plt.ylabel("SPIN Score (Higher = More Social Anxiety)")
+
+plt.subplot(2, 2, 4)
+sns.violinplot(x="is_mmo_game", y="SPIN_T", data=df_merged)
+plt.title("Social Phobia Scores by MMO Games", fontsize=14)
+plt.xlabel("Plays MMO Games (0=No, 1=Yes)")
+plt.ylabel("SPIN Score (Higher = More Social Anxiety)")
+
+plt.suptitle("Mental Health Metrics by Game Type", fontsize=18, y=0.98)
+plt.tight_layout()
+plt.savefig("mental_health_by_game_type.png", bbox_inches="tight")
+plt.close()
+
+# 3. Mental health by gaming intensity (box plots)
+plt.figure(figsize=(16, 6))
+
+plt.subplot(1, 3, 1)
+sns.boxplot(x="gaming_intensity", y="GAD_T", data=df_merged)
+plt.title("Anxiety Scores by Gaming Intensity", fontsize=14)
+plt.xlabel("Gaming Intensity")
+plt.ylabel("GAD Score (Higher = More Anxiety)")
+plt.xticks(rotation=45)
+
+plt.subplot(1, 3, 2)
+sns.boxplot(x="gaming_intensity", y="SWL_T", data=df_merged)
+plt.title("Life Satisfaction by Gaming Intensity", fontsize=14)
+plt.xlabel("Gaming Intensity")
+plt.ylabel("SWL Score (Higher = More Satisfied)")
+plt.xticks(rotation=45)
+
+plt.subplot(1, 3, 3)
+sns.boxplot(x="gaming_intensity", y="SPIN_T", data=df_merged)
+plt.title("Social Phobia by Gaming Intensity", fontsize=14)
+plt.xlabel("Gaming Intensity")
+plt.ylabel("SPIN Score (Higher = More Social Anxiety)")
+plt.xticks(rotation=45)
+
+plt.suptitle("Mental Health Metrics by Weekly Gaming Hours", fontsize=18)
+plt.tight_layout()
+plt.savefig("mental_health_by_gaming_intensity.png", bbox_inches="tight")
+plt.close()
+
+# 4. Scatter plot of Hours vs. Mental Health metrics
+plt.figure(figsize=(18, 6))
+
+plt.subplot(1, 3, 1)
+sns.regplot(
+    x="Hours",
+    y="GAD_T",
+    data=df_merged,
+    scatter_kws={"alpha": 0.3},
+    line_kws={"color": "red"},
+)
+plt.title("Gaming Hours vs. Anxiety", fontsize=14)
+plt.xlabel("Weekly Gaming Hours")
+plt.ylabel("GAD Score (Higher = More Anxiety)")
+
+plt.subplot(1, 3, 2)
+sns.regplot(
+    x="Hours",
+    y="SWL_T",
+    data=df_merged,
+    scatter_kws={"alpha": 0.3},
+    line_kws={"color": "red"},
+)
+plt.title("Gaming Hours vs. Life Satisfaction", fontsize=14)
+plt.xlabel("Weekly Gaming Hours")
+plt.ylabel("SWL Score (Higher = More Satisfied)")
+
+plt.subplot(1, 3, 3)
+sns.regplot(
+    x="Hours",
+    y="SPIN_T",
+    data=df_merged,
+    scatter_kws={"alpha": 0.3},
+    line_kws={"color": "red"},
+)
+plt.title("Gaming Hours vs. Social Phobia", fontsize=14)
+plt.xlabel("Weekly Gaming Hours")
+plt.ylabel("SPIN Score (Higher = More Social Anxiety)")
+
+plt.suptitle("Relationship Between Gaming Hours and Mental Health", fontsize=18)
+plt.tight_layout()
+plt.savefig("gaming_hours_vs_mental_health.png", bbox_inches="tight")
+plt.close()
+
+# 5. Primary genre comparison (only if enough data per genre)
+if df_merged["primary_genre"].notna().sum() > 30:
+    plt.figure(figsize=(16, 12))
+
+    plt.subplot(2, 2, 1)
+    sns.boxplot(x="primary_genre", y="GAD_T", data=df_merged)
+    plt.title("Anxiety by Primary Game Genre", fontsize=14)
+    plt.xlabel("Game Genre")
+    plt.ylabel("GAD Score")
+    plt.xticks(rotation=90)
+
+    plt.subplot(2, 2, 2)
+    sns.boxplot(x="primary_genre", y="SWL_T", data=df_merged)
+    plt.title("Life Satisfaction by Primary Game Genre", fontsize=14)
+    plt.xlabel("Game Genre")
+    plt.ylabel("SWL Score")
+    plt.xticks(rotation=90)
+
+    plt.subplot(2, 2, 3)
+    sns.boxplot(x="primary_genre", y="SPIN_T", data=df_merged)
+    plt.title("Social Phobia by Primary Game Genre", fontsize=14)
+    plt.xlabel("Game Genre")
+    plt.ylabel("SPIN Score")
+    plt.xticks(rotation=90)
+
+    plt.suptitle("Mental Health Metrics by Primary Game Genre", fontsize=18)
+    plt.tight_layout()
+    plt.savefig("mental_health_by_primary_genre.png", bbox_inches="tight")
+    plt.close()
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# REGRESSION ANALYSIS
+# ------------------------------------------------------------------------------
+
+# Create a regression model for each mental health measure
+print("\nRegression Models for Mental Health Metrics:")
+regression_results = []
+
+for metric in ["GAD_T", "SWL_T", "SPIN_T"]:
+    # Create a subset with complete data for regression
+    features = [
+        "Hours",
+        "is_multiplayer",
+        "is_action_game",
+        "is_strategy_game",
+        "is_shooter_game",
+        "is_mmo_game",
+    ]
+
+    # Drop rows with NaN in target or features
+    mask = ~df_merged[features + [metric]].isna().any(axis=1)
+    subset = df_merged.loc[mask, features + [metric]]
+
+    if len(subset) > 20:  # Only run if we have enough data
+        # Create X and y
+        X = subset[features]
+        y = subset[metric]
+
+        # Fit regression model
+        model = sm.OLS(y, sm.add_constant(X)).fit()
+
+        # Extract results
+        coefs = model.params
+        pvals = model.pvalues
+        r2 = model.rsquared
+
+        # Store key results
+        result = {
+            "Metric": metric,
+            "R-squared": round(r2, 3),
+            "Sample Size": len(subset),
+            "Significant Predictors": [],
+        }
+
+        # Add significant predictors
+        for feature in features:
+            if pvals[feature] < 0.05:
+                effect = "+" if coefs[feature] > 0 else "-"
+                result["Significant Predictors"].append(f"{feature} ({effect})")
+
+        regression_results.append(result)
+
+reg_df = pd.DataFrame(regression_results)
+print(tabulate(reg_df, headers="keys", tablefmt="grid"))
+
+print("\nAnalysis complete. All visualizations have been saved.")
+```
+
+```{python}
+# ------------------------------------------------------------------------------
+# MACHINE LEARNING MODELING WITH DECISION TREES
+# ------------------------------------------------------------------------------
+
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.tree import DecisionTreeClassifier, plot_tree, export_text
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib.colors import ListedColormap
+import graphviz
+from sklearn import tree
+
+print("\nBuilding Decision Tree models for mental health outcomes...")
+
+# Create categorical versions of mental health metrics for classification
+df_ml = df_merged.copy()
+
+# Create categorical targets based on clinical thresholds
+df_ml['anxiety_level'] = pd.cut(
+    df_ml['GAD_T'],
+    bins=[-1, 4, 9, 14, float('inf')],
+    labels=['Minimal', 'Mild', 'Moderate', 'Severe']
+)
+
+df_ml['satisfaction_level'] = pd.cut(
+    df_ml['SWL_T'],
+    bins=[-1, 14, 19, 24, float('inf')],
+    labels=['Dissatisfied', 'Below Average', 'Average', 'High']
+)
+
+df_ml['social_anxiety_level'] = pd.cut(
+    df_ml['SPIN_T'],
+    bins=[-1, 20, 30, 40, float('inf')],
+    labels=['Minimal', 'Mild', 'Moderate', 'Severe']
+)
+
+# Select features for modeling
+features = [
+    'Hours', 'is_multiplayer', 'is_action_game', 'is_rpg_game',
+    'is_strategy_game', 'is_shooter_game', 'is_mmo_game'
+]
+
+# Check if game_age_years is available and add it to features
+if 'game_age_years' in df_ml.columns:
+    features.append('game_age_years')
+    # Fill missing values in game_age_years with median
+    if df_ml['game_age_years'].isna().any():
+        median_age = df_ml['game_age_years'].median()
+        df_ml['game_age_years'].fillna(median_age, inplace=True)
+        print(f"Filled missing game_age_years values with median ({median_age})")
+
+print(f"Using features: {features}")
+
+# Function to build and evaluate decision tree model
+def build_decision_tree_model(X, y, target_name):
+    # Split data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.25, random_state=42
+    )
+
+    # Create and train decision tree model
+    # Limiting max_depth to create a more interpretable tree
+    dt = DecisionTreeClassifier(
+        max_depth=4,          # Limit depth for interpretability
+        min_samples_split=50, # Minimum samples required to split a node
+        min_samples_leaf=20,  # Minimum samples required at a leaf node
+        random_state=42
+    )
+    dt.fit(X_train, y_train)
+
+    # Make predictions
+    y_pred = dt.predict(X_test)
+
+    # Calculate accuracy
+    accuracy = accuracy_score(y_test, y_pred)
+
+    # Cross-validation
+    cv_scores = cross_val_score(dt, X, y, cv=5)
+
+    # Feature importance
+    feature_importance = pd.DataFrame({
+        'Feature': X.columns,
+        'Importance': dt.feature_importances_
+    }).sort_values('Importance', ascending=False)
+
+    # Create confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    cm_df = pd.DataFrame(
+        cm,
+        index=dt.classes_,
+        columns=dt.classes_
+    )
+
+    # Print results
+    print(f"\nModel Results for {target_name}:")
+    print(f"Test Accuracy: {accuracy:.4f}")
+    print(f"Cross-validation Scores: {cv_scores}")
+    print(f"Cross-validation Mean Accuracy: {cv_scores.mean():.4f}")
+    print("\nFeature Importance:")
+    print(feature_importance)
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred))
+
+    # Plot the decision tree
+    plt.figure(figsize=(20, 10))
+    plot_tree(
+        dt,
+        feature_names=X.columns,
+        class_names=dt.classes_,
+        filled=True,
+        rounded=True,
+        fontsize=10
+    )
+    plt.title(f"Decision Tree for Predicting {target_name}", fontsize=16)
+    plt.savefig(f"decision_tree_{target_name.lower().replace(' ', '_')}.png", bbox_inches="tight", dpi=300)
+    plt.close()
+
+    # Plot feature importance
+    plt.figure(figsize=(10, 6))
+    sns.barplot(
+        x='Importance',
+        y='Feature',
+        data=feature_importance,
+        palette='viridis'
+    )
+    plt.title(f"Feature Importance for {target_name}", fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f"feature_importance_{target_name.lower().replace(' ', '_')}.png", bbox_inches="tight")
+    plt.close()
+
+    # Plot confusion matrix
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(
+        cm_df,
+        annot=True,
+        fmt='d',
+        cmap='Blues',
+        cbar=False
+    )
+    plt.title(f"Confusion Matrix for {target_name}")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.tight_layout()
+    plt.savefig(f"confusion_matrix_{target_name.lower().replace(' ', '_')}.png", bbox_inches="tight")
+    plt.close()
+
+    # Get and save text representation of the tree for easy interpretation
+    tree_text = export_text(dt, feature_names=list(X.columns))
+    with open(f"decision_tree_{target_name.lower().replace(' ', '_')}.txt", "w") as f:
+        f.write(tree_text)
+
+    return {
+        'model': dt,
+        'accuracy': accuracy,
+        'cv_scores': cv_scores,
+        'cv_mean': cv_scores.mean(),
+        'feature_importance': feature_importance,
+        'classification_report': classification_report(y_test, y_pred),
+        'confusion_matrix': cm_df
+    }
+
+# Run models for each mental health outcome
+models = {}
+target_descriptions = {
+    'anxiety_level': 'Anxiety Level',
+    'satisfaction_level': 'Life Satisfaction Level',
+    'social_anxiety_level': 'Social Anxiety Level'
+}
+
+for target, description in target_descriptions.items():
+    print(f"\nModeling {description}...")
+
+    # Remove rows with missing target values
+    mask = ~df_ml[target].isna()
+    # Also remove rows with missing feature values
+    for feature in features:
+        if feature in df_ml.columns:
+            mask = mask & ~df_ml[feature].isna()
+
+    # Skip if no valid data
+    if mask.sum() < 100:
+        print(f"Insufficient valid data for {description} after removing missing values")
+        continue
+
+    # Get the filtered data
+    X = df_ml.loc[mask, features]
+    y = df_ml.loc[mask, target]
+
+    print(f"Training with {len(X)} samples")
+    models[target] = build_decision_tree_model(X, y, description)
+
+# Create summary plot for all models
+if models:
+    # Summary of accuracies
+    accuracies = {target_descriptions[target]: models[target]['accuracy'] for target in models}
+    cv_means = {target_descriptions[target]: models[target]['cv_mean'] for target in models}
+
+    plt.figure(figsize=(12, 6))
+
+    # Create a DataFrame for easy plotting
+    summary_df = pd.DataFrame({
+        'Target': list(accuracies.keys()),
+        'Test Accuracy': list(accuracies.values()),
+        'CV Mean Accuracy': list(cv_means.values())
+    })
+
+    # Plot the summary
+    summary_df = summary_df.melt(
+        id_vars='Target',
+        value_vars=['Test Accuracy', 'CV Mean Accuracy'],
+        var_name='Metric',
+        value_name='Accuracy'
+    )
+
+    sns.barplot(
+        x='Target',
+        y='Accuracy',
+        hue='Metric',
+        data=summary_df,
+        palette='Set2'
+    )
+
+    plt.title('Model Accuracy Comparison', fontsize=16)
+    plt.ylim(0, 1.0)
+    plt.xticks(rotation=45)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig('model_accuracy_comparison.png', bbox_inches='tight')
+    plt.close()
+
+    print("\nAll models built successfully. Visualizations saved.")
+else:
+    print("No models were successfully built.")
+
+# Save model results to CSV files for further analysis
+for target, description in target_descriptions.items():
+    if target in models:
+        models[target]['feature_importance'].to_csv(
+            f'feature_importance_{target}.csv',
+            index=False
+        )
+        models[target]['confusion_matrix'].to_csv(
+            f'confusion_matrix_{target}.csv'
+        )
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
+
+```{python}
+
+```

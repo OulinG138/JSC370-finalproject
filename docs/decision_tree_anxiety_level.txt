@@ -1,0 +1,43 @@
+|--- Hours <= 35.50
+|   |--- Hours <= 20.50
+|   |   |--- is_multiplayer <= 0.50
+|   |   |   |--- Hours <= 4.50
+|   |   |   |   |--- class: Mild
+|   |   |   |--- Hours >  4.50
+|   |   |   |   |--- class: Minimal
+|   |   |--- is_multiplayer >  0.50
+|   |   |   |--- is_strategy_game <= 0.50
+|   |   |   |   |--- class: Minimal
+|   |   |   |--- is_strategy_game >  0.50
+|   |   |   |   |--- class: Minimal
+|   |--- Hours >  20.50
+|   |   |--- game_age_years <= 14.50
+|   |   |   |--- game_age_years <= 12.00
+|   |   |   |   |--- class: Minimal
+|   |   |   |--- game_age_years >  12.00
+|   |   |   |   |--- class: Minimal
+|   |   |--- game_age_years >  14.50
+|   |   |   |--- is_rpg_game <= 0.50
+|   |   |   |   |--- class: Minimal
+|   |   |   |--- is_rpg_game >  0.50
+|   |   |   |   |--- class: Minimal
+|--- Hours >  35.50
+|   |--- Hours <= 44.50
+|   |   |--- Hours <= 41.50
+|   |   |   |--- Hours <= 37.50
+|   |   |   |   |--- class: Minimal
+|   |   |   |--- Hours >  37.50
+|   |   |   |   |--- class: Minimal
+|   |   |--- Hours >  41.50
+|   |   |   |--- class: Minimal
+|   |--- Hours >  44.50
+|   |   |--- is_strategy_game <= 0.50
+|   |   |   |--- Hours <= 58.00
+|   |   |   |   |--- class: Minimal
+|   |   |   |--- Hours >  58.00
+|   |   |   |   |--- class: Mild
+|   |   |--- is_strategy_game >  0.50
+|   |   |   |--- Hours <= 73.50
+|   |   |   |   |--- class: Minimal
+|   |   |   |--- Hours >  73.50
+|   |   |   |   |--- class: Minimal

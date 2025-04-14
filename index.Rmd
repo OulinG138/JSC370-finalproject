@@ -1,0 +1,26 @@
+---
+title: "Gaming Habits & Mental Health"
+output: html_document
+---
+
+# About the Project
+
+Kaixi Wang
+
+# Introduction
+
+Video games are a major part of modern life, especially for younger generations. With the rise of competitive gaming, multiplayer platforms, and immersive virtual environments, people are spending more time than ever before engaging with digital games. For many, gaming offers entertainment, social connection, and even stress relief. But for others, concerns have been raised about excessive screen time, social isolation, and mental health impacts.
+
+This project explores how gaming preferences and behaviors relate to mental health. Specifically, we look at how factors such as gaming hours, genre preferences, and multiplayer vs. single-player tendencies are associated with psychological well-being. The analysis is based on a large dataset of over 12,000 participants and uses validated mental health scales to assess levels of anxiety, life satisfaction, and social phobia.
+
+To enrich the analysis, I incorporated game-level metadata from the RAWG Video Games Database API. This allowed for deeper classification of each game by genre, platform, and release date—adding meaningful context to how different types of games may relate to well-being.
+
+# Research Purpose
+
+This research investigates which aspects of gaming behavior most strongly predict mental health outcomes and whether there's a threshold of gaming hours that correlates with significant changes in mental health metrics. Additionally, it explores how different game types and social play patterns (multiplayer vs. single player) relate to psychological well-being. Through statistical analysis and decision tree modeling, this project aims to provide evidence-based insights that could inform healthier gaming practices while acknowledging the limitations of observational data in establishing causality.
+
+# Access the Project
+
+Use the tabs at the top of this website to explore the **Methods**, **Results**, and **Discussion** sections. You can also download the full written report as a PDF using the link below.
+
+[📄 Download full report (PDF)](report.pdf)

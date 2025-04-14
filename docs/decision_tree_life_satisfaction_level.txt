@@ -1,0 +1,43 @@
+|--- Hours <= 30.50
+|   |--- Hours <= 19.50
+|   |   |--- game_age_years <= 18.50
+|   |   |   |--- is_multiplayer <= 0.50
+|   |   |   |   |--- class: High
+|   |   |   |--- is_multiplayer >  0.50
+|   |   |   |   |--- class: High
+|   |   |--- game_age_years >  18.50
+|   |   |   |--- Hours <= 9.00
+|   |   |   |   |--- class: Dissatisfied
+|   |   |   |--- Hours >  9.00
+|   |   |   |   |--- class: Average
+|   |--- Hours >  19.50
+|   |   |--- is_multiplayer <= 0.50
+|   |   |   |--- Hours <= 29.00
+|   |   |   |   |--- class: Dissatisfied
+|   |   |   |--- Hours >  29.00
+|   |   |   |   |--- class: High
+|   |   |--- is_multiplayer >  0.50
+|   |   |   |--- Hours <= 27.50
+|   |   |   |   |--- class: High
+|   |   |   |--- Hours >  27.50
+|   |   |   |   |--- class: Dissatisfied
+|--- Hours >  30.50
+|   |--- Hours <= 49.50
+|   |   |--- Hours <= 46.50
+|   |   |   |--- is_multiplayer <= 0.50
+|   |   |   |   |--- class: Dissatisfied
+|   |   |   |--- is_multiplayer >  0.50
+|   |   |   |   |--- class: Dissatisfied
+|   |   |--- Hours >  46.50
+|   |   |   |--- class: Average
+|   |--- Hours >  49.50
+|   |   |--- is_strategy_game <= 0.50
+|   |   |   |--- is_rpg_game <= 0.50
+|   |   |   |   |--- class: Dissatisfied
+|   |   |   |--- is_rpg_game >  0.50
+|   |   |   |   |--- class: Dissatisfied
+|   |   |--- is_strategy_game >  0.50
+|   |   |   |--- Hours <= 56.50
+|   |   |   |   |--- class: Dissatisfied
+|   |   |   |--- Hours >  56.50
+|   |   |   |   |--- class: Dissatisfied

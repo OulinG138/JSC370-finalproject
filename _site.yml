@@ -1,0 +1,17 @@
+name: "JSC370-Final-Project"
+output_dir: "docs"
+navbar:
+  title: "Gaming & Mental Health"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "Methods"
+      href: methods.html
+    - text: "Discussion"
+      href: discussion.html
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    number_sections: true

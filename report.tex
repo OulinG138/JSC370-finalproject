@@ -1,0 +1,315 @@
+\documentclass[12pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\title{JSC370 2025: Midterm Project\\
+Gaming Habits and Mental Health: Exploring Relationships Between Game Preferences and Psychological Well-being}
+\author{Kaixi Wang}
+\date{March 7, 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+Video games have become one of the most popular forms of entertainment worldwide, with over 3 billion players globally. As gaming has grown in popularity, so too has interest in understanding its relationship with mental health outcomes. Prior research has shown mixed results, with some studies indicating benefits like improved cognitive skills and social connections, while others highlight concerns about addiction, increased anxiety, and social isolation. \\
+\\
+This project explores the relationship between video game preferences, playing habits, and mental health outcomes using a dataset that includes player information, gaming preferences, and standardized mental health metrics. Specifically, we examine:
+
+\begin{enumerate}
+    \item Are certain game genres associated with different mental health outcomes?
+    \item How does gaming intensity (hours spent) relate to anxiety, life satisfaction, and social phobia?
+    \item Do multiplayer versus single-player preferences correlate with different psychological profiles?
+\end{enumerate}
+
+The mental health metrics examined include:
+\begin{itemize}
+    \item GAD\_T: Generalized Anxiety Disorder assessment score
+    \item SWL\_T: Satisfaction With Life scale score
+    \item SPIN\_T: Social Phobia Inventory score
+\end{itemize}
+
+\noindent
+By enriching our dataset with game metadata from the RAWG video game database API, we can perform a more nuanced analysis of these relationships.
+
+\section{Methods}
+
+\subsection{Data Sources}
+
+The primary dataset was obtained from a survey conducted on gaming habits and mental health metrics. The survey collected information from participants regarding their gaming preferences, playstyles, weekly gaming hours, and responses to standardized mental health assessment instruments.\\
+\\
+The raw survey data presented several challenges, including encoding issues, inconsistent game name formatting, and the need for mental health score calculations. We implemented a comprehensive preprocessing pipeline to clean the data, handle missing values, standardize formats, and calculate mental health metrics before saving the processed dataset, which served as the foundation for our analysis.\\
+\\
+To enhance our dataset with detailed game information, we integrated the RAWG Video Games Database API (\url{https://rawg.io/apidocs}), which provided rich metadata for each game mentioned by participants, including:
+\begin{itemize}
+    \item Release dates
+    \item Game genres and categories
+    \item User ratings and popularity metrics
+    \item Supported platforms
+    \item Primary genre classifications
+\end{itemize}
+
+\subsection{Data Cleaning and Wrangling}
+
+Our data preprocessing involved a systematic approach with the following key steps:
+
+\begin{enumerate}
+    \item \textbf{Data Import and Encoding Handling}: We used multiple encoding options (UTF-8, Latin-1, Windows-1252) to properly handle special characters in text fields that caused initial import errors.
+
+    \item \textbf{Game Name Standardization}: We created a comprehensive mapping system to standardize variant game names (e.g., "Starcraft 2" to "StarCraft II", "Skyrim" to "The Elder Scrolls V: Skyrim") to ensure accurate API matching.
+
+    \item \textbf{API Integration}: We implemented a robust API connection framework that:
+    \begin{itemize}
+        \item Queried the RAWG database for each unique game
+        \item Handled potential API failures gracefully
+        \item Extracted and structured relevant game metadata
+        \item Managed rate limits through appropriate request spacing
+    \end{itemize}
+
+    \item \textbf{Data Enrichment}: We created a systematic merging process to combine the API-retrieved game information with our participant dataset, correctly matching game metadata to each participant's gaming preferences.
+
+    \item \textbf{Feature Engineering}: We developed analytical variables including:
+    \begin{itemize}
+        \item Game age calculations based on release years
+        \item Binary genre indicators for major categories (action, RPG, strategy, shooter, MMO)
+        \item Gaming intensity categories (Casual, Regular, Dedicated, Hardcore) based on weekly hours
+        \item Multiplayer vs. single-player classification based on reported playstyles
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Mental Health Metrics}
+
+Our dataset included three validated psychological assessment instruments:
+
+\begin{itemize}
+    \item \textbf{GAD-T} (Generalized Anxiety Disorder): Measures anxiety symptoms on a scale from 0-21, with scores interpreted as:
+    \begin{itemize}
+        \item 0-4: Minimal anxiety
+        \item 5-9: Mild anxiety
+        \item 10-14: Moderate anxiety
+        \item 15-21: Severe anxiety
+    \end{itemize}
+
+    \item \textbf{SWL-T} (Satisfaction With Life): Measures global life satisfaction on a scale from 5-35, with higher scores indicating greater satisfaction with life circumstances:
+    \begin{itemize}
+        \item 5-9: Extremely dissatisfied
+        \item 10-14: Dissatisfied
+        \item 15-19: Slightly below average
+        \item 20-24: Average satisfaction
+        \item 25-29: High satisfaction
+        \item 30-35: Very high satisfaction
+    \end{itemize}
+
+    \item \textbf{SPIN-T} (Social Phobia Inventory): Measures symptoms of social anxiety on a scale from 0-68, with higher scores indicating more severe social anxiety:
+    \begin{itemize}
+        \item 0-20: Minimal to no social anxiety
+        \item 21-30: Mild social anxiety
+        \item 31-40: Moderate social anxiety
+        \item 41-68: Severe social anxiety
+    \end{itemize}
+\end{itemize}
+
+\subsection{Analytical Approach}
+
+Our analysis framework consisted of multiple complementary approaches:
+
+\begin{enumerate}
+    \item \textbf{Descriptive Statistics}: We calculated comprehensive summary statistics for mental health metrics and gaming variables, presenting them in formatted tables to establish baseline distributions and identify potential patterns.
+
+    \item \textbf{Comparative Analysis}: We implemented group comparison methods to examine differences in mental health metrics across:
+    \begin{itemize}
+        \item Different game genres and types
+        \item Varying levels of gaming intensity
+        \item Multiplayer versus single-player preferences
+    \end{itemize}
+
+    \item \textbf{Statistical Testing}: We employed appropriate significance tests including:
+    \begin{itemize}
+        \item One-way ANOVA to test for differences in mental health outcomes across game genres
+        \item Independent samples t-tests to compare multiplayer versus single-player gamers
+        \item Pearson correlations to quantify relationships between gaming habits and mental health metrics
+    \end{itemize}
+
+    \item \textbf{Regression Modeling}: We developed multivariate linear regression models to identify significant predictors of mental health outcomes while controlling for multiple gaming variables simultaneously.
+
+    \item \textbf{Data Visualization}: We created publication-quality visualizations including:
+    \begin{itemize}
+        \item Correlation heatmaps illustrating relationships between variables
+        \item Violin plots comparing distributions across categorical variables
+        \item Box plots showing mental health metrics by gaming intensity
+        \item Scatter plots with regression lines demonstrating continuous relationships
+    \end{itemize}
+\end{enumerate}
+
+\section{Preliminary Results}
+
+\subsection{Dataset Overview}
+
+After data preprocessing and enrichment with the RAWG API, our final dataset consisted of 12,801 participants with complete information on gaming habits and mental health metrics. The dataset demographics showed a predominance of male participants (94.2\%), with a mean age of 21.0 years. The most popular game was League of Legends (84.1\% of participants), followed by a variety of other games including StarCraft II, Counter-Strike: Global Offensive, and World of Warcraft. \\
+\\
+Table \ref{tab:dataset_overview} provides a summary of the enriched dataset characteristics.
+
+\begin{table}[h]
+\centering
+\caption{Enriched Dataset Overview}
+\label{tab:dataset_overview}
+\begin{tabular}{lc}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Total number of participants & 12,801 \\
+Participants with identified games & 11,835 (92.5\%) \\
+Number of unique games identified & 10 \\
+Average weekly gaming hours & 21.5 hours \\
+Gender distribution & Male: 94.2\%, Female: 5.4\%, Other: 0.4\% \\
+Age range & 18-56 years (mean: 21.0) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Mental Health Metrics Summary}
+
+Table \ref{tab:mental_health_summary} shows descriptive statistics for the three mental health measures across all participants.
+
+\begin{table}[h]
+\centering
+\caption{Summary Statistics for Mental Health Metrics}
+\label{tab:mental_health_summary}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Metric} & \textbf{Mean} & \textbf{SD} & \textbf{Min} & \textbf{Median} & \textbf{Max} & \textbf{Interpretation} \\
+\midrule
+GAD\_T & 5.20 & 4.70 & 0 & 4 & 21 & Mild anxiety (average) \\
+SWL\_T & 19.78 & 7.23 & 5 & 20 & 35 & Average satisfaction \\
+SPIN\_T & 19.84 & 13.45 & 0 & 17 & 68 & Minimal social anxiety \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Game Features and Mental Health Correlations}
+
+Our analysis revealed significant correlations between gaming features and mental health metrics. Figure \ref{fig:correlations} shows a heatmap of these correlations.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{game_mental_health_correlations.png}
+\caption{Correlations between game features and mental health metrics}
+\label{fig:correlations}
+\end{figure}
+\noindent
+The correlation analysis revealed that weekly gaming hours had the strongest relationship with mental health metrics, showing positive correlations with anxiety (GAD\_T, r=0.096) and social phobia (SPIN\_T, r=0.098), and a negative correlation with life satisfaction (SWL\_T, r=-0.13). Multiplayer gaming preference showed a positive correlation with life satisfaction (r=0.038) and negative correlations with anxiety and social phobia.
+
+\subsection{Gaming Intensity and Mental Health}
+
+We examined how weekly gaming hours related to mental health outcomes. Figure \ref{fig:gaming_hours} shows scatter plots with regression lines demonstrating these relationships.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{gaming_hours_vs_mental_health.png}
+\caption{Relationships between weekly gaming hours and mental health metrics}
+\label{fig:gaming_hours}
+\end{figure}
+\noindent
+Pearson correlation analysis confirmed statistically significant relationships, with increasing gaming hours associated with higher anxiety, lower life satisfaction, and higher social phobia. All p-values were \textless 0.001, indicating these relationships were not due to random chance. \\
+\\
+To further examine these relationships, we categorized the intensity of the game into four levels (Casual: \textless 5 hours/week, Regular: 5-15 hours/week, Dedicated: 15-30 hours/week, Hardcore: \textgreater 30 hours/week). Box plots in Figure \ref{fig:gaming_intensity} illustrate differences in mental health metrics across these categories.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{mental_health_by_gaming_intensity.png}
+\caption{Mental health metrics by gaming intensity categories}
+\label{fig:gaming_intensity}
+\end{figure}
+\noindent
+The "Hardcore" gaming group (\textgreater 30 hours/week) showed the highest anxiety (GAD\_T mean=6.21) and social phobia (SPIN\_T mean=22.34) scores, along with the lowest life satisfaction (SWL\_T mean=17.91) compared to other intensity groups.
+
+\subsection{Game Genre Analysis}
+
+We examined whether different game genres were associated with varying mental health profiles. Figure \ref{fig:game_type} compares mental health metrics across different game types.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{mental_health_by_game_type.png}
+\caption{Mental health metrics by game type}
+\label{fig:game_type}
+\end{figure}
+\noindent
+One-way ANOVA tests found significant differences in life satisfaction (SWL\_T, p=0.040) and social phobia (SPIN\_T, p=0.012) across game genres, but not for anxiety (GAD\_T, p=0.370). \\
+\\
+Figure \ref{fig:game_genres} shows box plots comparing mental health metrics across primary game genres. Action games showed the highest anxiety and social phobia scores, while card games showed the highest life satisfaction and lowest social phobia scores.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{mental_health_by_primary_genre.png}
+\caption{Mental health metrics by primary game genre}
+\label{fig:game_genres}
+\end{figure}
+
+\subsection{Multiplayer vs. Single Player Comparison}
+
+We found significant differences in all three mental health metrics between multiplayer and single-player gamers. Multiplayer gamers showed significantly higher life satisfaction (19.86 vs 18.80, p\textless0.001) and lower anxiety (5.17 vs 5.59, p=0.015) and social phobia (19.73 vs 21.26, p=0.001) compared to single-player gamers.
+
+\subsection{Regression Analysis}
+
+Multiple regression models were developed to identify significant predictors of each mental health outcome while controlling for other variables. Although the R-squared values were modest (0.010-0.020), the models identified several statistically significant predictors for each mental health outcome:
+
+\begin{itemize}
+    \item For anxiety (GAD\_T): Gaming hours (+) and multiplayer preference (-) were significant predictors
+    \item For life satisfaction (SWL\_T): Gaming hours (-), multiplayer preference (+), and action games (-) were significant predictors
+    \item For social phobia (SPIN\_T): Gaming hours (+), multiplayer preference (-), action games (+), strategy games (-), and shooter games (-) were significant predictors
+\end{itemize}
+
+\subsection{Modeling Results}
+
+To gain deeper insights into the relationships between gaming variables and mental health outcomes, we implemented multiple machine learning approaches including Linear Regression, Decision Trees, and Random Forest Regression. Each model was trained to predict the three mental health metrics (GAD\_T, SWL\_T, and SPIN\_T) based on gaming-related features. The Linear Regression models consistently outperformed the tree-based methods across all mental health metrics, achieving R² values of 0.014 for GAD\_T, 0.021 for SWL\_T, and 0.005 for SPIN\_T. While these values indicate statistically significant relationships, they also suggest that gaming habits alone explain only a small portion of the variance in mental health outcomes.
+
+Feature importance analysis (Figure \ref{fig:feature_importance}) revealed that weekly gaming hours was consistently the most important predictor across all mental health metrics, accounting for approximately 40-50\% of the total predictive power. The interaction between hours played and multiplayer status emerged as the second most influential factor, explaining roughly 20-25\% of the model's predictive capacity. This suggests that not only the raw amount of time spent gaming matters, but also how that time is distributed between social and solitary gaming experiences. Strategy games appeared more important for predicting life satisfaction, while action games had stronger associations with anxiety and social phobia measures.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{Feature_Importance_for_GAD_T.png}
+\caption{Feature importance ranking for predicting anxiety (GAD\_T)}
+\label{fig:feature_importance}
+\end{figure}
+
+Cross-validation testing confirmed that these relationships were stable across different subsets of the data. The gaming intensity analysis (Figure \ref{fig:gaming_intensity}) provided the most striking visual confirmation of the regression findings, showing clear trends of increasing anxiety and social phobia scores, along with decreasing life satisfaction, as weekly gaming hours increased from casual to hardcore levels. This relationship remained significant even after controlling for demographic factors and game genre preferences.
+
+\section{Summary}
+
+Our analysis of gaming habits and mental health metrics has revealed several significant patterns that provide insights into the relationship between video game engagement and psychological well-being:
+
+\begin{enumerate}
+    \item \textbf{Gaming intensity} shows a consistent relationship with mental health outcomes. Higher weekly gaming hours are associated with increased anxiety and social phobia, along with decreased life satisfaction. The "Hardcore" gaming group (\textgreater30 hours/week) demonstrated the most concerning mental health profile compared to more moderate gaming groups.
+
+    \item \textbf{Game genre preferences} show differential associations with mental health metrics. Strategy games are associated with higher life satisfaction and lower social phobia, while action games show trends toward higher anxiety and social phobia. These relationships were statistically significant for life satisfaction and social phobia measures.
+
+    \item \textbf{Multiplayer gaming} appears to have potential benefits for mental health compared to single-player gaming. Multiplayer gamers showed significantly higher life satisfaction and lower anxiety and social phobia scores. This relationship persisted even when controlling for other variables in regression models.
+\end{enumerate}
+
+\noindent
+While these findings demonstrate statistically significant relationships, it's important to note that the effect sizes were generally small, and our regression models explained only a modest amount of variance in mental health outcomes (1-2\%).
+
+\subsection{Limitations and Future Considerations}
+
+This study has several important limitations that should be considered when interpreting the results. First, the cross-sectional nature of our data prevents us from establishing causal relationships between gaming habits and mental health outcomes. While we found significant associations, we cannot determine whether gaming behaviors influence mental health, whether individuals with certain mental health profiles are drawn to particular gaming habits, or whether both are influenced by unmeasured third variables.
+
+Second, our sample demonstrates notable demographic skews, with a strong predominance of male participants (94.2\%) and a relatively young average age (21.0 years). This limits the generalizability of our findings to broader gaming populations, particularly female gamers and older adults who engage with video games. Additionally, there was significant imbalance in game representation, with League of Legends accounting for 84.1\% of participants, which may have influenced the genre-specific findings.
+
+Third, the relatively modest R² values across all our models (0.005-0.021) indicate that while gaming habits show statistically significant relationships with mental health metrics, they account for only a small portion of the total variance. This suggests that numerous other factors not captured in our dataset—such as real-world social connections, physical health, economic factors, and major life events—likely play more substantial roles in determining mental health outcomes.
+
+Future research should address these limitations by employing longitudinal designs to track changes in both gaming habits and mental health over time, recruiting more diverse participant samples to improve generalizability, and incorporating additional variables that might moderate or mediate the relationships between gaming and psychological well-being. Experimental studies that manipulate specific gaming parameters (such as duration, genre, or social context) could also help establish causal relationships that observational studies cannot determine.
+
+Additionally, more nuanced approaches to measuring gaming behaviors beyond simple weekly hour counts—such as examining specific in-game activities, communication patterns in multiplayer settings, or motivations for play—might reveal more complex relationships with mental health that our current models could not detect. Investigating potential threshold effects or non-linear relationships between gaming intensity and mental health outcomes could also yield important insights for establishing healthy gaming guidelines.
+
+
+
+\end{document}
