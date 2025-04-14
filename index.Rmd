@@ -23,4 +23,4 @@ This research investigates which aspects of gaming behavior most strongly predic
 
 Use the tabs at the top of this website to explore the **Methods**, **Results**, and **Discussion** sections. You can also download the full written report as a PDF using the link below.
 
-[📄 Download full report (PDF)](report.pdf)
+[📄 Download full report (PDF)](https://github.com/OulinG138/JSC370-finalproject/blob/main/report.pdf)
