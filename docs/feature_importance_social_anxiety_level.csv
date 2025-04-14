@@ -1,9 +1,0 @@
-Feature,Importance
-Hours,0.7511581069687783
-game_age_years,0.10970048076099101
-is_strategy_game,0.0600333121986711
-is_multiplayer,0.046645133508023046
-is_action_game,0.03246296656353664
-is_rpg_game,0.0
-is_shooter_game,0.0
-is_mmo_game,0.0

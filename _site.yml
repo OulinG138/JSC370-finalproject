@@ -1,5 +1,5 @@
 name: "JSC370-Final-Project"
-output_dir: "docs"
+output_dir: "."
 navbar:
   title: "Gaming & Mental Health"
   left:
